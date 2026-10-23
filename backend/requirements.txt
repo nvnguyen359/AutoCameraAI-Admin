@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-socketio
+requests
+pywebview
+pystray
+Pillow
+psutil
+pyinstaller; sys_platform == 'win32'
+pythonnet; sys_platform == 'win32'

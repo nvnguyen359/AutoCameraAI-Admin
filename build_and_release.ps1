@@ -10,3 +10,4 @@ if ([string]::IsNullOrWhiteSpace($Message)) {
 } else {
     python build_and_release.py "$Message"
 }
+

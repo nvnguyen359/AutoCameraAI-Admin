@@ -1,25 +1,45 @@
 import os
 import re
 import json
+import hashlib
+import shutil
 import subprocess
 import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent
+CLIENT_DIR = ROOT_DIR / "client"
+BACKEND_DIR = ROOT_DIR / "backend"
+CLIENT_DIST = BACKEND_DIR / "client"
+HASH_FILE = CLIENT_DIST / ".frontend_build_hash"
 
 GITHUB_REPO = "nvnguyen359/AutoCameraAI-Admin"
 SPEC_FILE = "AutoCameraAI-Admin.spec"
 ISS_FILE = "installer.iss"
-SETUP_EXE_PATH = os.path.join("Output", "AutoCameraAI_Admin_Setup.exe")
+SETUP_EXE_PATH = ROOT_DIR / "Output" / "AutoCameraAI_Admin_Setup.exe"
 
 
-def run_cmd(cmd, cwd=None, check=True):
+def run_cmd(cmd: str, cwd=None, check=True):
     print(f"Running: {cmd}")
-    result = subprocess.run(cmd, cwd=cwd, shell=True)
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, shell=True)
     if check and result.returncode != 0:
         print(f"Error executing: {cmd}")
         sys.exit(1)
     return result.returncode
 
 
-def find_inno_setup():
+def compute_frontend_hash(src_dir: Path) -> str:
+    if not src_dir.exists():
+        return ""
+    h = hashlib.md5()
+    for p in sorted(src_dir.rglob("*")):
+        if p.is_file():
+            stat = p.stat()
+            h.update(f"{p.relative_to(src_dir)}:{stat.st_size}:{int(stat.st_mtime)}|".encode("utf-8"))
+    return h.hexdigest()
+
+
+def find_inno_setup() -> str:
     candidates = [
         os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
         r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
@@ -34,7 +54,7 @@ def find_inno_setup():
     sys.exit(1)
 
 
-def find_gh_cli():
+def find_gh_cli() -> str:
     default_gh = r"C:\Program Files\GitHub CLI\gh.exe"
     if os.path.exists(default_gh):
         return f'"{default_gh}"'
@@ -42,92 +62,92 @@ def find_gh_cli():
 
 
 def main():
-    print("=========================================")
-    print("   STARTING BUILD AND RELEASE PIPELINE   ")
-    print("=========================================")
+    print("==================================================")
+    print("   AUTOCAMERA-ADMIN: BUILD & RELEASE PIPELINE     ")
+    print("==================================================")
 
-    if not os.path.exists("main.py"):
-        print("Error: main.py not found! Please add main.py before building.")
+    # 1. Bump version in backend/version.txt & version.json
+    version_txt_path = BACKEND_DIR / "version.txt"
+    old_raw = version_txt_path.read_text(encoding="utf-8").strip() if version_txt_path.exists() else "v1.0.0"
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", old_raw)
+    if not m:
+        print(f"Invalid version format in {version_txt_path}: {old_raw}")
         sys.exit(1)
 
-    # 1. Bump version in updater.py
-    updater_path = "updater.py"
-    with open(updater_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3)) + 1
+    new_ver = f"{major}.{minor}.{patch}"
+    new_tag = f"v{new_ver}"
 
-    match = re.search(r'CURRENT_VERSION\s*=\s*"(.*?)"', content)
-    if not match:
-        print("Cannot find CURRENT_VERSION in updater.py")
-        sys.exit(1)
+    print(f"\n[1/6] Bumping version: {old_raw} -> {new_tag}...")
+    version_txt_path.write_text(f"{new_tag}\n", encoding="utf-8")
 
-    old_ver = match.group(1)
-    parts = old_ver.split('.')
-    parts[-1] = str(int(parts[-1]) + 1)
-    new_ver = '.'.join(parts)
-
-    print(f"\n[1/6] Bumping version: {old_ver} -> {new_ver}...")
-    content = re.sub(
-        r'CURRENT_VERSION\s*=\s*".*?"',
-        f'CURRENT_VERSION = "{new_ver}"',
-        content
-    )
-    with open(updater_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    # 2. Update installer.iss AppVersion
-    if os.path.exists(ISS_FILE):
-        with open(ISS_FILE, "r", encoding="utf-8") as f:
-            iss_content = f.read()
-        iss_content = re.sub(r'AppVersion=.*', f'AppVersion={new_ver}', iss_content)
-        with open(ISS_FILE, "w", encoding="utf-8") as f:
-            f.write(iss_content)
-        print(f"Updated {ISS_FILE} -> AppVersion={new_ver}")
-
-    # 3. Update version.json
-    version_json_path = "version.json"
+    version_json_path = ROOT_DIR / "version.json"
     v_data = {
         "version": new_ver,
-        "download_url": f"https://github.com/{GITHUB_REPO}/releases/download/v{new_ver}/AutoCameraAI_Admin_Setup.exe"
+        "download_url": f"https://github.com/{GITHUB_REPO}/releases/download/{new_tag}/AutoCameraAI_Admin_Setup.exe",
     }
-    with open(version_json_path, "w", encoding="utf-8") as f:
-        json.dump(v_data, f, indent=4)
-    print(f"[2/6] Updated {version_json_path} -> v{new_ver}")
+    version_json_path.write_text(json.dumps(v_data, indent=4) + "\n", encoding="utf-8")
 
-    # 4. Build PyInstaller EXE
-    print(f"\n[3/6] Building PyInstaller ({SPEC_FILE})...")
-    run_cmd(f'"{sys.executable}" -m PyInstaller {SPEC_FILE} --clean -y')
+    # 2. Build Angular Client (with smart hash cache)
+    print("\n[2/6] Checking & Building Angular Client...")
+    if not (CLIENT_DIR / "node_modules").exists():
+        print("[*] Installing Angular dependencies (npm install)...")
+        run_cmd("npm install", cwd=CLIENT_DIR)
 
-    # 5. Build Inno Setup Installer
-    print(f"\n[4/6] Building Inno Setup ({ISS_FILE})...")
+    current_hash = compute_frontend_hash(CLIENT_DIR / "src")
+    last_hash = HASH_FILE.read_text(encoding="utf-8").strip() if HASH_FILE.exists() else ""
+    has_bundle = (CLIENT_DIST / "browser" / "index.html").is_file() or (CLIENT_DIST / "index.html").is_file()
+
+    if has_bundle and current_hash and current_hash == last_hash:
+        print(f"[*] Frontend unchanged (Hash: {current_hash[:10]}...) -> Skipping ng build!")
+    else:
+        print("[*] Building Angular Frontend -> backend/client...")
+        run_cmd("npx ng build", cwd=CLIENT_DIR)
+        CLIENT_DIST.mkdir(parents=True, exist_ok=True)
+        if current_hash:
+            HASH_FILE.write_text(current_hash, encoding="utf-8")
+
+    # 3. Build Backend Python EXE with PyInstaller
+    print(f"\n[3/6] Building Python Backend EXE ({SPEC_FILE})...")
+    run_cmd(f'"{sys.executable}" -m PyInstaller {SPEC_FILE} --clean -y', cwd=BACKEND_DIR)
+
+    # Ensure client & version.txt are synced into dist/AutoCameraAI-Admin
+    dist_app_dir = BACKEND_DIR / "dist" / "AutoCameraAI-Admin"
+    if CLIENT_DIST.exists():
+        shutil.copytree(CLIENT_DIST, dist_app_dir / "client", dirs_exist_ok=True)
+    shutil.copy2(version_txt_path, dist_app_dir / "version.txt")
+
+    # 4. Build Inno Setup Installer
+    print(f"\n[4/6] Building Inno Setup Installer ({ISS_FILE})...")
     inno_path = find_inno_setup()
-    run_cmd(f'"{inno_path}" {ISS_FILE}')
+    run_cmd(f'"{inno_path}" /DMyAppVersion="{new_ver}" {ISS_FILE}', cwd=BACKEND_DIR)
 
-    if not os.path.exists(SETUP_EXE_PATH):
+    if not SETUP_EXE_PATH.exists():
         print(f"Error: Setup file not found at {SETUP_EXE_PATH}")
         sys.exit(1)
 
-    # 6. Commit & Push source code + version.json to GitHub
+    # 5. Commit & Push source + version.json to GitHub
     print(f"\n[5/6] Committing and pushing to {GITHUB_REPO}...")
-    commit_msg = sys.argv[1] if len(sys.argv) > 1 else f"Release v{new_ver}"
-    run_cmd("git add .")
-    run_cmd(f'git commit -m "release: v{new_ver} - {commit_msg}"')
-    run_cmd("git branch -M main")
-    run_cmd("git push -u origin main")
+    commit_msg = sys.argv[1] if len(sys.argv) > 1 else f"Release {new_tag}"
+    run_cmd("git add .", cwd=ROOT_DIR)
+    run_cmd(f'git commit -m "release: {new_tag} - {commit_msg}"', cwd=ROOT_DIR)
+    run_cmd("git branch -M main", cwd=ROOT_DIR)
+    run_cmd("git push -u origin main", cwd=ROOT_DIR)
 
-    # 7. Create GitHub Release & Upload Setup EXE
-    print(f"\n[6/6] Uploading {SETUP_EXE_PATH} to GitHub Releases (v{new_ver})...")
+    # 6. Upload Setup EXE to GitHub Releases
+    print(f"\n[6/6] Uploading {SETUP_EXE_PATH.name} to GitHub Releases ({new_tag})...")
     gh_cmd = find_gh_cli()
     release_cmd = (
-        f'{gh_cmd} release create v{new_ver} "{SETUP_EXE_PATH}" '
-        f'--title "Release v{new_ver}" '
+        f'{gh_cmd} release create {new_tag} "{SETUP_EXE_PATH}" '
+        f'--title "Release {new_tag}" '
         f'--notes "{commit_msg}" '
         f'--repo {GITHUB_REPO}'
     )
-    run_cmd(release_cmd)
+    run_cmd(release_cmd, cwd=ROOT_DIR)
 
-    print("\n=========================================")
-    print(f"DONE! Version v{new_ver} built and published to GitHub Releases!")
-    print("=========================================")
+    print("\n==================================================")
+    print(f"DONE! Version {new_tag} published to GitHub Releases!")
+    print("==================================================")
 
 
 if __name__ == "__main__":

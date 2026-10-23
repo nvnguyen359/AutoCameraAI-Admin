@@ -1,11 +1,21 @@
-# PyInstaller & Inno Setup build outputs
+# Node / Angular
+client/node_modules/
+client/.angular/
+client/dist/
+client/out-tsc/
+
+# Backend built static & PyInstaller outputs
+backend/client/
+backend/build/
+backend/dist/
+backend/logs/
+Output/
 build/
 dist/
-Output/
-*.pyc
-__pycache__/
 
-# Environments
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
 .venv/
 venv/
 env/

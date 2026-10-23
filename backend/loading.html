@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>AutoCameraAI Admin - Đang khởi động</title>
+  <style>
+    body {
+      margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #0f172a; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif;
+      user-select: none;
+    }
+    .box {
+      text-align: center; padding: 40px; border-radius: 20px;
+      background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-width: 420px; width: 90%;
+    }
+    h1 { font-size: 24px; margin: 0 0 10px; color: #38bdf8; }
+    p { font-size: 14px; color: #94a3b8; margin: 0 0 24px; }
+    .bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; position: relative; }
+    .bar::after {
+      content: ''; position: absolute; left: -30%; top: 0; height: 100%; width: 35%;
+      background: linear-gradient(90deg, #38bdf8, #10b981); border-radius: 4px;
+      animation: move 1.6s infinite ease-in-out;
+    }
+    @keyframes move { 0% { left: -35%; } 100% { left: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>AutoCameraAI Admin</h1>
+    <p>Hệ thống đang khởi động máy chủ nội bộ, vui lòng chờ...</p>
+    <div class="bar"></div>
+  </div>
+</body>
+</html>
