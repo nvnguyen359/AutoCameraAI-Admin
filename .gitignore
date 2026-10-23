@@ -1,0 +1,16 @@
+# PyInstaller & Inno Setup build outputs
+build/
+dist/
+Output/
+*.pyc
+__pycache__/
+
+# Environments
+.venv/
+venv/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+*.log
