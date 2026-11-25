@@ -1,0 +1,5 @@
+{
+    "version": "1.1.2",
+    "download_url": "https://github.com/nvnguyen359/AutoCameraAI-manager-releases/releases/download/v1.1.2/AutoCameraAI_Manager_Android.apk",
+    "release_notes": "v1.1.2: Tách riêng kênh phát hành OTA (AutoCameraAI-manager-releases) khỏi mã nguồn, khắc phục lỗi không nhận cập nhật trên cả Desktop và Android."
+}
